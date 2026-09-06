@@ -1,0 +1,30 @@
+import { _electron as electron } from 'playwright';
+import {mkdir} from 'node:fs/promises';
+await mkdir('artifacts',{recursive:true});
+const app=await electron.launch({timeout:20000,...(process.argv[2]?{executablePath:process.argv[2],args:[]}:{args:['.']}),env:{...process.env,ELECTRON_RUN_AS_NODE:undefined}});
+try {
+ const page=await app.firstWindow();
+ const errors=[];
+ page.on('pageerror',e=>errors.push(e.message));
+ await page.getByRole('heading',{name:'让每一次选人，都有依据。'}).waitFor();
+ await page.getByRole('button',{name:'英雄榜单',exact:true}).click();
+ await page.getByRole('heading',{name:'版本强势，一目了然。'}).waitFor();
+ await page.getByRole('button',{name:'队友状态',exact:true}).click();
+ await page.getByRole('heading',{name:'先看近况，再做判断。'}).waitFor();
+ await page.getByRole('button',{name:'连接设置',exact:true}).click();
+ await page.getByRole('heading',{name:'准备好，连接峡谷。'}).waitFor();
+ await page.getByRole('button',{name:'英雄推荐',exact:true}).click();
+ await page.getByRole('button',{name:'选择敌方英雄 1',exact:true}).click();
+ await page.getByPlaceholder('搜索名称 / 称号 / 英文').fill('Aatrox');
+ const aatrox=page.locator('.pick-results button').first();
+ await aatrox.waitFor({timeout:100000});
+ await aatrox.click();
+ await page.waitForFunction(()=>!document.querySelector('.spinner'),{},{timeout:100000});
+ await page.waitForFunction(()=>Array.from(document.querySelectorAll('.recommend-card img')).every(img=>img.complete&&img.naturalWidth>0),{},{timeout:15000});
+ const overflow=await page.evaluate(()=>document.documentElement.scrollWidth>window.innerWidth);
+ if(overflow)throw new Error('Horizontal overflow detected');
+ console.log('Selected a real catalog champion; data state:',await page.locator('.source-line,.notice.warning').allTextContents());
+ await page.screenshot({path:'artifacts/desktop.png',fullPage:true});
+ if(errors.length)throw new Error(errors.join('\n'));
+ console.log('PASS: Electron launched, four pages navigated, no renderer errors');
+} finally { await app.close(); }
