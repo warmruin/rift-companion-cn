@@ -2,9 +2,13 @@ import {app,BrowserWindow,ipcMain,dialog,shell} from 'electron';
 import path from 'node:path';
 import {existsSync} from 'node:fs';
 import {pathToFileURL} from 'node:url';
+import {execFile} from 'node:child_process';
+import {promisify} from 'node:util';
 import {getChampions,getStats,initStats} from './stats';
 import {getClientSnapshot,setLockfile} from './lcu';
-import {allowedSource,validateStatsArgs} from './security';
+import {allowedSource,elevationRelaunchSpec,validateStatsArgs} from './security';
+
+const execFileAsync=promisify(execFile);
 
 let win:BrowserWindow|null=null;
 app.whenReady().then(()=>{
@@ -16,6 +20,12 @@ app.whenReady().then(()=>{
  ipcMain.handle('stats',(_event,role,id,force)=>{const args=validateStatsArgs(role,id);return getStats(args.role,args.opponentId,force===true);});
  ipcMain.handle('client',()=>getClientSnapshot());
  ipcMain.handle('choose-lockfile',async()=>{const result=await dialog.showOpenDialog({title:'选择 LOL 安装目录下的 lockfile',properties:['openFile']});if(result.canceled)return null;const file=result.filePaths[0];setLockfile(file);return file;});
+ ipcMain.handle('restart-elevated',async()=>{
+  const target=process.env.PORTABLE_EXECUTABLE_FILE||process.execPath;
+  const spec=elevationRelaunchSpec(target);
+  await execFileAsync(spec.file,spec.args,{env:{...process.env,...spec.environment},windowsHide:true,timeout:30_000});
+  setTimeout(()=>app.quit(),300);
+ });
  ipcMain.handle('open-source',async(_event,url)=>{if(typeof url!=='string'||!allowedSource(url))throw new Error('不允许打开此链接');await shell.openExternal(url);});
  win=new BrowserWindow({width:1400,height:940,minWidth:1080,minHeight:760,backgroundColor:'#0b1015',title:'Rift Companion · LOL 国服助手',autoHideMenuBar:true,webPreferences:{preload:path.join(__dirname,'preload.cjs'),contextIsolation:true,nodeIntegration:false,sandbox:true}});
  win.webContents.setWindowOpenHandler(()=>({action:'deny'}));

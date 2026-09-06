@@ -7,7 +7,7 @@ Windows 桌面应用，提供英雄推荐、OP.GG 分路榜单与 counter 参考
 打开 `release/win-unpacked/Rift Companion.exe`，或使用 `release` 下的便携版 exe。解压版须保留整个文件夹。无需安装 Node.js，不需要 Riot API Key。
 
 1. 打开国服 LOL 并登录。
-2. 打开助手，在「连接设置」查看连接状态。自动发现失败时选择 LOL 安装目录的 `lockfile`（客户端运行时存在）。
+2. 打开助手，在「连接设置」查看连接状态。助手会检测后台的 `LeagueClient.exe` 与 `LeagueClientUx.exe`。国服 WeGame 以管理员权限运行客户端时，点击「以管理员身份重启」并接受 Windows UAC 提示。
 3. 「英雄推荐」选择自己的分路；可自动同步可见阵容，或手动输入敌方英雄。点击某个敌方位置的「设为对位」细化 counter 推荐。
 4. 「英雄榜单」查看当前分路层级、胜率和登场率，可点击「寻找 counter」。
 5. 「队友状态」在客户端提供可见身份与战绩时显示近五场、胜率与状态评级。匿名玩家不会尝试还原身份。
@@ -50,6 +50,8 @@ node scripts/smoke.mjs  # 实际启动 Electron，检查四页导航
 - `tests`：明确标记的测试 fixture，与生产数据隔离。
 
 LCU 凭据仅在主进程内存中使用，不发送给外部网站。HTTPS 证书例外仅限本机 LCU 请求，外部网站正常验证证书。手动 lockfile 路径仅用于本次运行。公共统计缓存位于系统应用数据目录中的 `stats-cache`。
+
+国服 WeGame 的 `LeagueClient/lockfile` 可能是 0 字节并由客户端独占，此时手动选择它不能提供认证信息。助手会改从后台进程启动参数读取临时端口与令牌；若 LOL 以管理员权限运行，Windows 要求助手处于相同权限级别。令牌不会显示或写入日志。
 
 ## 已知限制
 

@@ -6,6 +6,7 @@ import {
   visibleTeammatesFromGameflow,
   historyRoute,
   enemyChampionSlots,
+  credentialsFromProcesses,
 } from '../electron/lcu';
 
 const game = (id: number, queueId = 420, duration = 1200, creation = id * 1000) => ({
@@ -42,6 +43,26 @@ describe('parseLockfileContent', () => {
     'LeagueClient:1234:2999:secret:https:extra',
   ])('rejects invalid lockfile content: %j', (content) => {
     expect(() => parseLockfileContent(content)).toThrow(/lockfile/i);
+  });
+
+  it('explains that a zero-byte WeGame lockfile cannot provide credentials', () => {
+    expect(() => parseLockfileContent('')).toThrow(/空文件.*管理员权限/);
+  });
+});
+
+describe('background League process discovery', () => {
+  it('uses credentials from LeagueClient.exe when LeagueClientUx metadata is inaccessible', () => {
+    expect(credentialsFromProcesses([
+      { Name: 'LeagueClientUx.exe', CommandLine: null, ExecutablePath: null },
+      { Name: 'LeagueClient.exe', CommandLine: '"F:\\LeagueClient.exe" --app-port=5034 --remoting-auth-token="cn-token"', ExecutablePath: 'F:\\LeagueClient.exe' },
+    ])).toEqual({ port: 5034, password: 'cn-token', protocol: 'https' });
+  });
+
+  it('reports the privilege mismatch when League processes exist but metadata is hidden', () => {
+    expect(() => credentialsFromProcesses([
+      { Name: 'LeagueClient.exe', CommandLine: null, ExecutablePath: null },
+      { Name: 'LeagueClientUx.exe', CommandLine: null, ExecutablePath: null },
+    ])).toThrow(/已检测到.*管理员权限/);
   });
 });
 

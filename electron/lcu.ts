@@ -14,6 +14,7 @@ const REMAKE_SECONDS = 300;
 type Json = Record<string, any>;
 type Credentials = { port: number; password: string; protocol: 'https' };
 type Identity = { puuid?: string; summonerId?: string | number };
+type LeagueProcess = { Name?: string; CommandLine?: string | null; ExecutablePath?: string | null };
 
 let configuredLockfile: string | undefined;
 let snapshotCache: { expires: number; value: ClientSnapshot } | undefined;
@@ -30,6 +31,9 @@ export function setLockfile(path: string): void {
 }
 
 export function parseLockfileContent(content: string): Credentials {
+  if (!content.trim()) {
+    throw new Error('选择的 lockfile 是空文件；国服 WeGame 客户端通常需要以管理员权限读取后台进程凭据');
+  }
   const parts = content.trim().split(':');
   if (parts.length !== 5) throw new Error('Invalid League lockfile');
   const [, pidText, portText, password, protocol] = parts;
@@ -50,32 +54,58 @@ function credentialsFromCommandLine(commandLine: string): Credentials | undefine
   return { port: portNumber, password, protocol: 'https' };
 }
 
+export function credentialsFromProcesses(processes: LeagueProcess[]): Credentials {
+  for (const process of processes) {
+    const credentials = credentialsFromCommandLine(process.CommandLine ?? '');
+    if (credentials) return credentials;
+  }
+  if (processes.length && processes.every(process => !process.CommandLine && !process.ExecutablePath)) {
+    throw new Error('已检测到 LOL 客户端，但无法读取连接凭据；请以管理员权限运行本助手后自动重连');
+  }
+  throw new Error('已检测到 LOL 客户端，但启动参数中没有可用的连接凭据');
+}
+
 async function discoverCredentials(): Promise<Credentials> {
-  if (configuredLockfile) return parseLockfileContent(await readFile(configuredLockfile, 'utf8'));
+  if (configuredLockfile) {
+    try {
+      return parseLockfileContent(await readFile(configuredLockfile, 'utf8'));
+    } catch (error) {
+      const code = (error as NodeJS.ErrnoException).code;
+      if (code === 'EBUSY' || code === 'EPERM' || code === 'EACCES') {
+        throw new Error('lockfile 正被国服客户端独占，无法直接读取；请以管理员权限运行本助手后自动连接');
+      }
+      throw error;
+    }
+  }
 
   const script = [
-    "$p = Get-CimInstance Win32_Process -Filter \"Name='LeagueClientUx.exe'\" | Select-Object -First 1 CommandLine,ExecutablePath",
+    "$p = Get-CimInstance Win32_Process | Where-Object { $_.Name -in @('LeagueClient.exe','LeagueClientUx.exe') } | Select-Object Name,CommandLine,ExecutablePath",
     'if ($null -eq $p) { exit 3 }',
-    '$p | ConvertTo-Json -Compress',
+    '@($p) | ConvertTo-Json -Compress',
   ].join('; ');
-  let processInfo: { CommandLine?: string; ExecutablePath?: string };
+  let processes: LeagueProcess[];
   try {
     const { stdout } = await execFileAsync('powershell.exe', ['-NoProfile', '-NonInteractive', '-Command', script], {
       timeout: REQUEST_TIMEOUT_MS,
       windowsHide: true,
       maxBuffer: 128 * 1024,
     });
-    processInfo = JSON.parse(stdout.trim());
+    const parsed = JSON.parse(stdout.trim()) as LeagueProcess[] | LeagueProcess;
+    processes = Array.isArray(parsed) ? parsed : [parsed];
   } catch {
     throw new Error('未检测到正在运行的 LeagueClientUx');
   }
 
-  const fromArgs = credentialsFromCommandLine(processInfo.CommandLine ?? '');
-  if (fromArgs) return fromArgs;
-  const executable = processInfo.ExecutablePath;
-  if (!executable) throw new Error('无法定位 League 客户端 lockfile');
-  const lockfile = executable.replace(/[\\/][^\\/]+$/, '\\lockfile');
-  return parseLockfileContent(await readFile(lockfile, 'utf8'));
+  try {
+    return credentialsFromProcesses(processes);
+  } catch (processError) {
+    for (const process of processes) {
+      if (!process.ExecutablePath) continue;
+      const lockfile = process.ExecutablePath.replace(/[\\/][^\\/]+$/, '\\lockfile');
+      try { return parseLockfileContent(await readFile(lockfile, 'utf8')); } catch { /* try next process */ }
+    }
+    throw processError;
+  }
 }
 
 async function lcuGet<T>(credentials: Credentials, pathname: string): Promise<T> {

@@ -13,6 +13,7 @@ export interface AppApi {
  stats(role:Role,opponentId?:number,force?:boolean):Promise<StatsSnapshot>;
  client():Promise<ClientSnapshot>;
  chooseLockfile():Promise<string|null>;
+ restartElevated():Promise<void>;
  openSource(url:string):Promise<void>;
 }
 declare global { interface Window { assistant:AppApi } }

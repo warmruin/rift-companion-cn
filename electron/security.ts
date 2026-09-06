@@ -7,3 +7,12 @@ export function validateStatsArgs(role:unknown,opponentId:unknown):{role:Role;op
 export function allowedSource(url:string):boolean {
  try{const u=new URL(url);return u.protocol==='https:'&&!u.username&&!u.password&&['op.gg','www.op.gg','support-developer.riotgames.com','developer.riotgames.com'].includes(u.hostname);}catch{return false;}
 }
+
+export function elevationRelaunchSpec(executablePath:string){
+ if(!executablePath.trim())throw new Error('无法确定助手程序路径');
+ return {
+  file:'powershell.exe',
+  args:['-NoProfile','-NonInteractive','-Command','Start-Process -FilePath $env:RIFT_COMPANION_EXE -Verb RunAs'],
+  environment:{RIFT_COMPANION_EXE:executablePath},
+ };
+}
