@@ -429,14 +429,6 @@ export async function isLeagueGameRunning():Promise<boolean>{
 
 export function buildTeamRatingMessage(teammates:Teammate[]):string{
  const rows=teammates.filter(player=>!player.anonymous&&player.matches.length>0).map(player=>{const rating=rateMatches(player.matches);const win=rating.winRate===null?'—':`${Math.round(rating.winRate)}%`;return `${player.name} ${rating.label}·近${rating.count}局${win}`;});
- if(!rows.length)throw new Error('当前没有可发送的队友战绩');
+ if(!rows.length)throw new Error('当前没有可复制的队友战绩');
  return `队友近期状态：${rows.join(' | ')}`;
-}
-
-export async function sendTeamRating():Promise<string>{
- const credentials=await discoverCredentials();const snapshot=await fetchClientSnapshot();if(!snapshot.connected||snapshot.phase!=='ChampSelect')throw new Error('只能在英雄选择阶段发送评价');
- const body=buildTeamRatingMessage(snapshot.teammates);const conversations=await lcuGet<Json[]>(credentials,'/lol-chat/v1/conversations');
- const conversation=(Array.isArray(conversations)?conversations:[]).find(item=>/champion.?select/i.test(String(item.type??item.gameName??item.name??'')));
- const id=conversation?.id??conversation?.conversationId;if(!id)throw new Error('未找到英雄选择聊天框');
- await lcuRequest(credentials,`/lol-chat/v1/conversations/${encodeURIComponent(String(id))}/messages`,'POST',{body,type:'chat'});return body;
 }
