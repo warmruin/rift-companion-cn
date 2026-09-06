@@ -1,6 +1,6 @@
 {
   "name": "rift-companion-cn",
-  "version": "0.1.1",
+  "version": "0.3.0",
   "private": true,
   "description": "LOL 国服桌面助手",
   "author": "Cris",
@@ -45,10 +45,19 @@
     ],
     "asar": true,
     "win": {
+      "icon": "assets/app.ico",
       "target": [
+        "nsis",
         "portable"
       ],
-      "signAndEditExecutable": false
+      "signExecutable": false
+    },
+    "nsis": {
+      "oneClick": false,
+      "allowToChangeInstallationDirectory": true,
+      "createDesktopShortcut": true,
+      "createStartMenuShortcut": true,
+      "shortcutName": "Rift Companion"
     }
   }
 }

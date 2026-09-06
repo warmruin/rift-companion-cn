@@ -7,6 +7,8 @@ try {
  const errors=[];
  page.on('pageerror',e=>errors.push(e.message));
  await page.getByRole('heading',{name:'让每一次选人，都有依据。'}).waitFor();
+ await page.getByText('结合自家英雄阵容推荐',{exact:true}).waitFor();
+ await page.getByRole('button',{name:'最小化程序'}).waitFor();
  await page.getByRole('button',{name:'英雄榜单',exact:true}).click();
  await page.getByRole('heading',{name:'版本强势，一目了然。'}).waitFor();
  await page.getByRole('button',{name:'队友状态',exact:true}).click();
@@ -23,6 +25,12 @@ try {
  await page.waitForFunction(()=>Array.from(document.querySelectorAll('.recommend-card img')).every(img=>img.complete&&img.naturalWidth>0),{},{timeout:15000});
  const overflow=await page.evaluate(()=>document.documentElement.scrollWidth>window.innerWidth);
  if(overflow)throw new Error('Horizontal overflow detected');
+ await app.evaluate(async({BrowserWindow})=>{const win=BrowserWindow.getAllWindows()[0];win.minimize();await new Promise(resolve=>setTimeout(resolve,250));win.restore();});
+ await page.getByRole('heading',{name:'让每一次选人，都有依据。'}).waitFor({timeout:15000});
+ const background=await page.evaluate(()=>getComputedStyle(document.documentElement).backgroundColor);
+ if(background==='rgb(255, 255, 255)')throw new Error('Renderer restored to a white background');
+ const gpu=await app.evaluate(({app})=>app.getGPUFeatureStatus());
+ if(!Object.values(gpu).some(value=>String(value).includes('disabled')))throw new Error('Hardware acceleration was not disabled');
  console.log('Selected a real catalog champion; data state:',await page.locator('.source-line,.notice.warning').allTextContents());
  await page.screenshot({path:'artifacts/desktop.png',fullPage:true});
  if(errors.length)throw new Error(errors.join('\n'));

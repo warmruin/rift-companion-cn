@@ -7,6 +7,9 @@ import {
   historyRoute,
   enemyChampionSlots,
   credentialsFromProcesses,
+  rankedDraftState,
+  buildTeamRatingMessage,
+  allyChampionSlots,
 } from '../electron/lcu';
 
 const game = (id: number, queueId = 420, duration = 1200, creation = id * 1000) => ({
@@ -124,6 +127,14 @@ describe('visibleTeammatesFromChampSelect', () => {
       expect.objectContaining({ id: 'anonymous:4', name: '匿名玩家', championId: 5, anonymous: true }),
     ]);
   });
+  it('keeps a visible summoner id for later name resolution even when the row has no display name',()=>{
+    const [player]=visibleTeammatesFromChampSelect({localPlayerCellId:0,myTeam:[{cellId:0,summonerId:1},{cellId:1,summonerId:22,championId:3}]});
+    expect(player).toMatchObject({summonerId:22,anonymous:false,name:'队友'});
+  });
+});
+
+it('uses allied pick intents until champions are locked',()=>{
+ expect(allyChampionSlots({localPlayerCellId:0,myTeam:[{cellId:0,championId:1},{cellId:1,championId:0,championPickIntent:22}]})).toEqual([22]);
 });
 
 describe('enemyChampionSlots', () => {
@@ -147,4 +158,21 @@ describe('visibleTeammatesFromGameflow', () => {
       expect.objectContaining({ id: 'ally', name: 'Ally', championId: 2 }),
     ]);
   });
+});
+
+describe('ranked draft state',()=>{
+ it('enables automatic draft only for solo and flex ranked queues',()=>{
+  const session={localPlayerCellId:1,myTeam:[{cellId:1,assignedPosition:'MIDDLE',championId:103}],theirTeam:[{championId:134},{championId:0,championPickIntent:22}]};
+  expect(rankedDraftState(420,session)).toEqual({active:true,role:'mid',ownChampionId:103,enemies:[134]});
+  expect(rankedDraftState(440,session).active).toBe(true);
+  expect(rankedDraftState(1700,session)).toEqual({active:false,enemies:[]});
+ });
+});
+
+describe('champion-select team rating message',()=>{
+ it('formats visible teammates with grade, recent win rate and sample count',()=>{
+  const teammates=[{id:'a',name:'队友A',championId:1,role:'top',matches:[game(1).participants[1]&&{id:'1',championId:22,queueId:420,date:1,win:true,kills:8,deaths:2,assists:7,duration:1200},{id:'2',championId:22,queueId:420,date:2,win:false,kills:1,deaths:8,assists:2,duration:1200},{id:'3',championId:22,queueId:420,date:3,win:true,kills:8,deaths:2,assists:7,duration:1200}]}];
+  const message=buildTeamRatingMessage(teammates);
+  expect(message).toContain('队友A');expect(message).toContain('中等马');expect(message).toContain('67%');expect(message).toContain('近3局');
+ });
 });

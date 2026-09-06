@@ -1,8 +1,10 @@
 import { execFile } from 'node:child_process';
 import { readFile } from 'node:fs/promises';
+import path from 'node:path';
 import { request } from 'node:https';
 import { promisify } from 'node:util';
-import type { ClientSnapshot, Match, Role, Teammate } from '../src/shared/types';
+import type { ApplyResult, BuildPlan, ClientSnapshot, Match, Role, Teammate } from '../src/shared/types';
+import {rateMatches} from '../src/core/analysis';
 
 const execFileAsync = promisify(execFile);
 const REQUEST_TIMEOUT_MS = 2_500;
@@ -17,6 +19,8 @@ type Identity = { puuid?: string; summonerId?: string | number };
 type LeagueProcess = { Name?: string; CommandLine?: string | null; ExecutablePath?: string | null };
 
 let configuredLockfile: string | undefined;
+let configuredLeaguePath: string | undefined;
+let lastDiscoveredLeaguePath: string | undefined;
 let snapshotCache: { expires: number; value: ClientSnapshot } | undefined;
 let snapshotInflight: { generation: number; promise: Promise<ClientSnapshot> } | undefined;
 let configurationGeneration = 0;
@@ -29,6 +33,9 @@ export function setLockfile(path: string): void {
   configurationGeneration += 1;
   historyCache.clear();
 }
+
+export function setLeaguePath(value:string):void{configuredLeaguePath=value.trim()||undefined;snapshotCache=undefined;snapshotInflight=undefined;configurationGeneration+=1;}
+export function getLeaguePath():string{return lastDiscoveredLeaguePath??configuredLeaguePath??'';}
 
 export function parseLockfileContent(content: string): Credentials {
   if (!content.trim()) {
@@ -92,7 +99,10 @@ async function discoverCredentials(): Promise<Credentials> {
     });
     const parsed = JSON.parse(stdout.trim()) as LeagueProcess[] | LeagueProcess;
     processes = Array.isArray(parsed) ? parsed : [parsed];
+    const withPath=processes.find(process=>process.ExecutablePath);
+    if(withPath?.ExecutablePath)lastDiscoveredLeaguePath=path.dirname(withPath.ExecutablePath);
   } catch {
+    if(configuredLeaguePath){try{return parseLockfileContent(await readFile(path.join(configuredLeaguePath,'lockfile'),'utf8'));}catch{/* process is still required for locked CN clients */}}
     throw new Error('未检测到正在运行的 LeagueClientUx');
   }
 
@@ -104,22 +114,23 @@ async function discoverCredentials(): Promise<Credentials> {
       const lockfile = process.ExecutablePath.replace(/[\\/][^\\/]+$/, '\\lockfile');
       try { return parseLockfileContent(await readFile(lockfile, 'utf8')); } catch { /* try next process */ }
     }
+    if(configuredLeaguePath){try{return parseLockfileContent(await readFile(path.join(configuredLeaguePath,'lockfile'),'utf8'));}catch{/* preserve the more useful process error */}}
     throw processError;
   }
 }
 
-async function lcuGet<T>(credentials: Credentials, pathname: string): Promise<T> {
+async function lcuRequest<T>(credentials: Credentials, pathname: string,method='GET',body?:unknown): Promise<T> {
   if (!pathname.startsWith('/')) throw new Error('Invalid LCU path');
   return new Promise<T>((resolve, reject) => {
     const req = request({
       hostname: '127.0.0.1',
       port: credentials.port,
       path: pathname,
-      method: 'GET',
+      method,
       auth: `riot:${credentials.password}`,
       rejectUnauthorized: false,
       timeout: REQUEST_TIMEOUT_MS,
-      headers: { Accept: 'application/json' },
+      headers: { Accept: 'application/json',...(body===undefined?{}:{'Content-Type':'application/json'}) },
     }, (res) => {
       const chunks: Buffer[] = [];
       let length = 0;
@@ -136,15 +147,17 @@ async function lcuGet<T>(credentials: Credentials, pathname: string): Promise<T>
           reject(new Error(`LCU request failed (${res.statusCode ?? 'unknown'})`));
           return;
         }
-        try { resolve(JSON.parse(Buffer.concat(chunks).toString('utf8')) as T); }
+        try {const text=Buffer.concat(chunks).toString('utf8');resolve((text?JSON.parse(text):undefined) as T);}
         catch { reject(new Error('LCU returned invalid JSON')); }
       });
     });
     req.on('timeout', () => req.destroy(new Error('LCU request timed out')));
     req.on('error', reject);
-    req.end();
+    req.end(body===undefined?undefined:JSON.stringify(body));
   });
 }
+
+async function lcuGet<T>(credentials: Credentials, pathname: string): Promise<T> {return lcuRequest<T>(credentials,pathname);}
 
 function sameIdentity(player: Json, identity: Identity): boolean {
   return Boolean(
@@ -199,16 +212,19 @@ export function enemyChampionSlots(session: Json): number[] {
   return (Array.isArray(session.theirTeam) ? session.theirTeam : []).map((member: Json) => Number(member.championId ?? 0));
 }
 
+export function allyChampionSlots(session:Json):number[]{const local=Number(session.localPlayerCellId);return (Array.isArray(session.myTeam)?session.myTeam:[]).filter((member:Json)=>Number(member.cellId)!==local).map((member:Json)=>Number(member.championId||member.championPickIntent||0)).filter(Boolean);}
+
 export function visibleTeammatesFromChampSelect(session: Json): Teammate[] {
   const localCell = Number(session.localPlayerCellId);
   return (Array.isArray(session.myTeam) ? session.myTeam : [])
     .filter((member: Json) => Number(member.cellId) !== localCell)
     .map((member: Json) => {
-      const anonymous = isAnonymous(member) || (!member.puuid && !member.summonerId) || !String(member.displayName ?? member.gameName ?? '').trim();
+      const hasIdentity=Boolean(member.puuid||(member.summonerId!=null&&Number(member.summonerId)>0));
+      const anonymous = isAnonymous(member) || !hasIdentity;
       const cellId = Number(member.cellId);
       return {
         id: anonymous ? `anonymous:${cellId}` : String(member.puuid ?? member.summonerId),
-        name: anonymous ? '匿名玩家' : String(member.displayName ?? member.gameName),
+        name: anonymous ? '匿名玩家' : String(member.displayName ?? member.gameName ?? '').trim()||'队友',
         championId: Number(member.championId ?? member.championPickIntent ?? 0),
         role: String(member.assignedPosition ?? ''),
         matches: [],
@@ -259,6 +275,13 @@ function roleOf(value: unknown): Role | undefined {
   return map[normalized];
 }
 
+export function rankedDraftState(queueId:number|undefined,session:Json|undefined):{active:boolean;role?:Role;ownChampionId?:number;enemies:number[]}{
+ if((queueId!==420&&queueId!==440)||!session)return {active:false,enemies:[]};
+ const local=(Array.isArray(session.myTeam)?session.myTeam:[]).find((member:Json)=>Number(member.cellId)===Number(session.localPlayerCellId));
+ const role=roleOf(local?.assignedPosition);const ownChampionId=Number(local?.championId??0)||undefined;
+ return {active:true,...(role?{role}:{}),...(ownChampionId?{ownChampionId}:{}),enemies:enemyChampionSlots(session).filter(Boolean)};
+}
+
 async function loadHistory(credentials: Credentials, teammate: Teammate, queueId?: number): Promise<Match[]> {
   const key = `${teammate.id}:${queueId ?? 'all'}`;
   const cached = historyCache.get(key);
@@ -269,6 +292,12 @@ async function loadHistory(credentials: Credentials, teammate: Teammate, queueId
   const matches = selectRecentMatches(Array.isArray(games) ? games : [], identity, queueId);
   historyCache.set(key, { expires: Date.now() + HISTORY_TTL_MS, matches });
   return matches;
+}
+
+async function resolveTeammate(credentials:Credentials,teammate:Teammate):Promise<void>{
+ if(teammate.anonymous||teammate.name!=='队友'||teammate.summonerId==null)return;
+ const details=await optionalGet<Json>(credentials,`/lol-summoner/v1/summoners/${encodeURIComponent(String(teammate.summonerId))}`);if(!details)return;
+ teammate.name=String(details.gameName??details.displayName??details.summonerName??'队友');if(details.puuid)teammate.puuid=String(details.puuid);
 }
 
 export function historyRoute(identity: Identity): string {
@@ -300,6 +329,7 @@ async function fetchClientSnapshot(): Promise<ClientSnapshot> {
       ? visibleTeammatesFromChampSelect(champSelect)
       : gameflowTeammates.length ? gameflowTeammates : lobby ? visibleLobbyMembers(lobby, self) : [];
     const known = teammates.filter((player) => !player.anonymous).slice(0, 4);
+    await Promise.all(known.map(player=>resolveTeammate(credentials,player)));
     await Promise.all(known.map(async (player) => {
       try {
         player.matches = await loadHistory(credentials, player, queueId);
@@ -312,19 +342,24 @@ async function fetchClientSnapshot(): Promise<ClientSnapshot> {
     const banned = completed.filter((action) => action.type === 'ban').map((action) => Number(action.championId));
     const picked = completed.filter((action) => action.type === 'pick').map((action) => Number(action.championId));
     const local = champSelect?.myTeam?.find((member: Json) => Number(member.cellId) === Number(champSelect.localPlayerCellId));
+    const draft=rankedDraftState(queueId,champSelect);
     const snapshot: ClientSnapshot = {
       connected: true,
       phase: String(phase),
       message: '已连接 League 客户端',
       selfName: String(self.gameName ?? self.displayName ?? self.summonerName ?? ''),
-      role: roleOf(local?.assignedPosition),
+      role: draft.role??roleOf(local?.assignedPosition),
+      rankedDraft: draft.active,
+      ownChampionId: draft.ownChampionId,
+      leaguePath:getLeaguePath()||undefined,
       queueId,
       enemies: enemyChampionSlots(champSelect ?? {}),
+      allies: allyChampionSlots(champSelect??{}),
       banned: [...new Set(banned)], picked: [...new Set(picked)], teammates, updatedAt,
     };
     return snapshot;
   } catch (error) {
-    return { connected: false, phase: 'Unavailable', message: error instanceof Error ? error.message : 'League 客户端不可用', enemies: [], banned: [], picked: [], teammates: [], updatedAt };
+    return { connected: false, phase: 'Unavailable', message: error instanceof Error ? error.message : 'League 客户端不可用', enemies: [], allies:[], banned: [], picked: [], teammates: [], updatedAt };
   }
 }
 
@@ -340,4 +375,68 @@ export async function getClientSnapshot(): Promise<ClientSnapshot> {
   });
   snapshotInflight = { generation, promise };
   return promise;
+}
+
+function validPlan(plan:BuildPlan):boolean{
+ return Boolean(plan&&Number.isInteger(plan.championId)&&plan.championId>0&&['top','jungle','mid','adc','support'].includes(plan.role)
+  &&Number.isInteger(plan.primaryStyleId)&&Number.isInteger(plan.subStyleId)&&Array.isArray(plan.perkIds)&&plan.perkIds.length===9
+  &&plan.perkIds.every(id=>Number.isInteger(id)&&id>0)&&plan.summonerSpellIds?.length===2
+  &&[...plan.starterItemIds,...plan.bootItemIds,...plan.coreItemIds].every(id=>Number.isInteger(id)&&id>0));
+}
+
+export async function applyBuildPlan(plan:BuildPlan):Promise<ApplyResult>{
+ if(!validPlan(plan))throw new Error('方案字段不完整，已阻止应用');
+ const credentials=await discoverCredentials();
+ const [gameflow,session,self]=await Promise.all([
+  lcuGet<Json>(credentials,'/lol-gameflow/v1/session'),
+  lcuGet<Json>(credentials,'/lol-champ-select/v1/session'),
+  lcuGet<Json>(credentials,'/lol-summoner/v1/current-summoner'),
+ ]);
+ const queueId=Number(gameflow?.gameData?.queue?.id??gameflow?.gameData?.queueId??0);
+ const draft=rankedDraftState(queueId,session);
+ if(!draft.active)throw new Error('当前不是单双排或灵活排位的选人阶段');
+ if(draft.ownChampionId!==plan.championId||draft.role!==plan.role)throw new Error('当前英雄或分路已经变化，请重新获取方案');
+ const result:ApplyResult={rune:{ok:false,message:'未应用'},items:{ok:false,message:'未应用'},spells:{ok:false,message:'未应用'}};
+ try{
+  const pages=await lcuGet<Json[]>(credentials,'/lol-perks/v1/pages');
+  const name=`RC ${plan.championName} ${plan.role}`;const existing=Array.isArray(pages)?pages.find(page=>String(page.name)===name):undefined;
+  const payload={...(existing?.id?{id:existing.id}:{}),name,primaryStyleId:plan.primaryStyleId,subStyleId:plan.subStyleId,selectedPerkIds:plan.perkIds,current:true};
+  if(existing?.id)await lcuRequest(credentials,`/lol-perks/v1/pages/${Number(existing.id)}`,'PUT',payload);else await lcuRequest(credentials,'/lol-perks/v1/pages','POST',payload);
+  result.rune={ok:true,message:'专用符文页已应用'};
+ }catch(error){result.rune={ok:false,message:`符文应用失败：${error instanceof Error?error.message:String(error)}`};}
+ try{
+  const endpoint=`/lol-item-sets/v1/item-sets/${encodeURIComponent(String(self.summonerId))}/sets`;
+  const current=await lcuGet<Json>(credentials,endpoint);const oldSets=Array.isArray(current?.itemSets)?current.itemSets:[];
+  const uid=`RiftCompanion-${plan.championId}-${plan.role}`;
+  const itemSet={uid,title:`Rift Companion · ${plan.championName}`,type:'custom',map:'any',mode:'any',priority:true,sortrank:1,associatedChampions:[plan.championId],associatedMaps:[11],blocks:[
+   {type:'出门装',items:plan.starterItemIds.map(id=>({id:String(id),count:1}))},
+   {type:'鞋子',items:plan.bootItemIds.map(id=>({id:String(id),count:1}))},
+   {type:'核心装备',items:plan.coreItemIds.map(id=>({id:String(id),count:1}))},
+  ]};
+  await lcuRequest(credentials,endpoint,'PUT',{...current,itemSets:[...oldSets.filter((set:Json)=>set.uid!==uid),itemSet]});
+  result.items={ok:true,message:'装备方案已保存到客户端'};
+ }catch(error){result.items={ok:false,message:`装备保存失败：${error instanceof Error?error.message:String(error)}`};}
+ try{
+  await lcuRequest(credentials,'/lol-champ-select/v1/session/my-selection','PATCH',{spell1Id:plan.summonerSpellIds[0],spell2Id:plan.summonerSpellIds[1]});
+  result.spells={ok:true,message:'召唤师技能已应用'};
+ }catch(error){result.spells={ok:false,message:`召唤师技能未应用：${error instanceof Error?error.message:String(error)}`};}
+ return result;
+}
+
+export async function isLeagueGameRunning():Promise<boolean>{
+ try{const {stdout}=await execFileAsync('powershell.exe',['-NoProfile','-NonInteractive','-Command',"[bool](Get-Process -Name 'League of Legends' -ErrorAction SilentlyContinue)"],{timeout:1500,windowsHide:true,maxBuffer:4096});return stdout.trim().toLowerCase()==='true';}catch{return false;}
+}
+
+export function buildTeamRatingMessage(teammates:Teammate[]):string{
+ const rows=teammates.filter(player=>!player.anonymous&&player.matches.length>0).map(player=>{const rating=rateMatches(player.matches);const win=rating.winRate===null?'—':`${Math.round(rating.winRate)}%`;return `${player.name} ${rating.label}·近${rating.count}局${win}`;});
+ if(!rows.length)throw new Error('当前没有可发送的队友战绩');
+ return `队友近期状态：${rows.join(' | ')}`;
+}
+
+export async function sendTeamRating():Promise<string>{
+ const credentials=await discoverCredentials();const snapshot=await fetchClientSnapshot();if(!snapshot.connected||snapshot.phase!=='ChampSelect')throw new Error('只能在英雄选择阶段发送评价');
+ const body=buildTeamRatingMessage(snapshot.teammates);const conversations=await lcuGet<Json[]>(credentials,'/lol-chat/v1/conversations');
+ const conversation=(Array.isArray(conversations)?conversations:[]).find(item=>/champion.?select/i.test(String(item.type??item.gameName??item.name??'')));
+ const id=conversation?.id??conversation?.conversationId;if(!id)throw new Error('未找到英雄选择聊天框');
+ await lcuRequest(credentials,`/lol-chat/v1/conversations/${encodeURIComponent(String(id))}/messages`,'POST',{body,type:'chat'});return body;
 }

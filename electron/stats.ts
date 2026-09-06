@@ -1,7 +1,7 @@
 import { mkdir, readFile, writeFile } from 'node:fs/promises';
 import path from 'node:path';
 import { load, type CheerioAPI } from 'cheerio';
-import type { Champion, CounterRow, Role, StatsSnapshot, TierRow } from '../src/shared/types';
+import type { BuildPlan, Champion, CounterRow, Role, StatsSnapshot, TierRow } from '../src/shared/types';
 
 const OP_GG = 'https://op.gg/lol/champions';
 const DDRAGON = 'https://ddragon.leagueoflegends.com';
@@ -14,6 +14,7 @@ let configuredAssetsDir = path.join(process.cwd(), 'assets');
 let championMemo: Champion[] | undefined;
 let championRequest: Promise<Champion[]> | undefined;
 const statsRequests = new Map<string, Promise<StatsSnapshot>>();
+const buildRequests = new Map<string, Promise<BuildPlan[]>>();
 
 export function initStats(cacheDir: string, assetsDir: string): void {
   configuredCacheDir = cacheDir;
@@ -21,6 +22,35 @@ export function initStats(cacheDir: string, assetsDir: string): void {
   championMemo = undefined;
   championRequest = undefined;
   statsRequests.clear();
+  buildRequests.clear();
+}
+
+function idsAndNames($:CheerioAPI,tableName:string,kind:'item'|'summoner'):{ids:number[];names:string[]}{
+ const table=$('table').filter((_,el)=>$(el).find('caption').text().trim()===tableName).first();
+ const images=table.find('tbody tr').first().find('img');
+ const ids:number[]=[];const names:string[]=[];
+ const spellIds:Record<string,number>={cleanse:1,exhaust:3,flash:4,ghost:6,heal:7,smite:11,teleport:12,ignite:14,barrier:21};
+ images.each((_,el)=>{const src=$(el).attr('src')??'';const name=$(el).attr('alt')??'';const match=kind==='item'?src.match(/\/item\/(\d+)\.png/i):src.match(/\/(?:summoner|spell)\/(\d+)\.png/i);const id=Number(match?.[1]??(kind==='summoner'?spellIds[name.toLowerCase().replace(/[^a-z]/g,'')]:0));if(Number.isInteger(id)&&id>0){ids.push(id);names.push(name||String(id));}});
+ return {ids,names};
+}
+
+export function parseBuildPage(html:string,championId:number,championName:string,role:Role,source:string):BuildPlan[]{
+ const $=load(html);const patch=patchFromPage($);const decoded=html.replace(/&quot;/g,'"').replace(/\\"/g,'"');
+ const runes=[...decoded.matchAll(/"play":(\d+),"pick_rate":([\d.]+).*?"win_rate":([\d.]+).*?"primary_rune":\{"id":\d+,"name":"([^"]+)".*?"importClientData":\{.*?"primaryStyleId":(\d+),"subStyleId":(\d+),"selectedPerkIds":\[([\d,]+)\]/gs)];
+ if(!runes.length)throw new Error('OP.GG rune selection is absent or incomplete');
+ const spells=idsAndNames($,'SummonerSpells Table','summoner');
+ const starter=idsAndNames($,'Items Table','item');const boots=idsAndNames($,'Boots Table','item');const core=idsAndNames($,'Builds Table','item');
+ const skillTable=$('table').filter((_,el)=>$(el).find('caption').text().trim()==='SkillOrder Table').first();
+ const skillOrder=skillTable.find('tbody tr').first().text().match(/[QWER]{3,18}/)?.[0]??'';
+ if(spells.ids.length<2||starter.ids.length<1||boots.ids.length<1||core.ids.length<2)throw new Error('OP.GG item or summoner spell data is incomplete');
+ const fetchedAt=new Date().toISOString();
+ return runes.slice(0,3).map((match,index)=>({
+  id:`${championId}-${role}-${index}-${patch}`,championId,championName,role,label:index===0?'常用稳定方案':index===1?'高胜率方案':'备选方案',
+  primaryStyleId:Number(match[5]),subStyleId:Number(match[6]),perkIds:match[7].split(',').map(Number),perkNames:[match[4]],
+  summonerSpellIds:spells.ids.slice(0,2),summonerSpellNames:spells.names.slice(0,2),starterItemIds:starter.ids,starterItemNames:starter.names,
+  bootItemIds:boots.ids,bootItemNames:boots.names,coreItemIds:core.ids,coreItemNames:core.names,skillOrder,
+  games:Number(match[1])||null,pickRate:Number(match[2])*100,winRate:Number(match[3])*100,patch,source,fetchedAt,stale:false,
+ }));
 }
 
 function assertPercent(value: string, label: string): number {
@@ -261,4 +291,26 @@ export function getStats(role: Role, opponentId?: number, force = false): Promis
   const request = loadStats(role, opponentId, force).finally(() => { statsRequests.delete(key); });
   statsRequests.set(key, request);
   return request;
+}
+
+function buildCachePath(championId:number,role:Role):string{return path.join(configuredCacheDir,`opgg-build-${championId}-${role}.json`);}
+
+export function getBuildPlans(championId:number,role:Role,force=false):Promise<BuildPlan[]>{
+ const key=`${championId}:${role}:${force}`;const active=buildRequests.get(key);if(active)return active;
+ const request=(async()=>{
+  const file=buildCachePath(championId,role);let cached:BuildPlan[]|undefined;
+  try{const value=JSON.parse(await readFile(file,'utf8')) as BuildPlan[];if(Array.isArray(value)&&value.length&&value.every(plan=>plan.championId===championId&&plan.role===role&&plan.perkIds.length===9))cached=value;}catch{/* no cache */}
+  if(!force&&cached&&Date.now()-Date.parse(cached[0].fetchedAt)<CACHE_TTL_MS)return cached.map(plan=>({...plan,stale:false,error:undefined}));
+  try{
+   const champions=await getChampions();const champion=champions.find(item=>item.id===championId);if(!champion)throw new Error('Unknown champion');
+   const slug=champion.key.toLowerCase().replace(/[^a-z0-9]/g,'');const source=`${OP_GG}/${slug}/build/${ROLE_PATH[role]}?region=global&tier=emerald_plus`;
+   const plans=parseBuildPage(await fetchText(source),championId,champion.name,role,source);
+   await mkdir(configuredCacheDir,{recursive:true});await writeFile(file,JSON.stringify(plans),'utf8');return plans;
+  }catch(error){if(cached)return cached.map(plan=>({...plan,stale:true,error:error instanceof Error?error.message:String(error)}));throw error;}
+ })().finally(()=>buildRequests.delete(key));
+ buildRequests.set(key,request);return request;
+}
+
+export async function refreshAllRoles():Promise<void>{
+ await Promise.allSettled((Object.keys(ROLE_PATH) as Role[]).map(role=>getStats(role,undefined,true)));
 }
