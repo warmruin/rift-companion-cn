@@ -1,5 +1,5 @@
 import {describe,expect,it} from 'vitest';
-import {parseBuildPage} from '../electron/stats';
+import {parseBuildPage,localizeRunePlan} from '../electron/stats';
 
 const html=`<html><head><meta name="description" content="Ahri build for patch 16.17."/></head><body>
 <script>self.__next_f.push([1,"{\\"play\\":91113,\\"pick_rate\\":0.51,\\"win_rate\\":0.5208,\\"primary_rune\\":{\\"id\\":8112,\\"name\\":\\"Electrocute\\"},\\"importClientData\\":{\\"championKey\\":\\"ahri\\",\\"primaryStyleId\\":8100,\\"subStyleId\\":8200,\\"selectedPerkIds\\":[8112,8139,8140,8106,8210,8226,5005,5008,5001]}}"])</script>
@@ -19,4 +19,13 @@ describe('OP.GG build parser',()=>{
  it('rejects pages without a complete rune selection',()=>{
   expect(()=>parseBuildPage('<meta name="description" content="patch 16.17"><table></table>',103,'Ahri','mid','https://op.gg')).toThrow(/rune/i);
  });
+});
+
+it('localizes every rune including cached English names and stat shards',()=>{
+ const [plan]=parseBuildPage(html,103,'Ahri','mid','https://op.gg');
+ const localized=localizeRunePlan(plan);
+ expect(localized.perkNames).toHaveLength(9);
+ expect(localized.perkNames[0]).toBe('电刑');
+ expect(localized.perkNames[6]).toBe('攻击速度');
+ expect(localized.perkIds).toEqual(plan.perkIds);
 });

@@ -1,15 +1,21 @@
-import type { Champion, Match, Rating, Recommendation, Role, StatsSnapshot } from '../shared/types';
+import type { Champion, Match, Rating, RatingLabels, Recommendation, Role, StatsSnapshot } from '../shared/types';
 
 export const RATING_RULES = { minimumGames:3, upper:70, lower:40, winWeight:70, kdaWeight:30, kdaCap:5 };
 const ENGAGE=new Set([12,32,53,59,79,89,111,120,154,201,235,254,412,516,555,875]);
 const CONTROL=new Set([1,3,9,25,26,32,40,43,53,54,57,63,89,99,111,117,127,143,161,201,267,350,412,497,526]);
-export function rateMatches(input:Match[]):Rating {
+export const DEFAULT_RATING_LABELS:RatingLabels={upper:'上等马',middle:'中等马',lower:'下等马'};
+export function normalizeRatingLabels(value?:Partial<RatingLabels>):RatingLabels {
+ const clean=(key:keyof RatingLabels)=>typeof value?.[key]==='string'?value[key]!.replace(/[\r\n\t]/g,' ').trim().slice(0,16)||DEFAULT_RATING_LABELS[key]:DEFAULT_RATING_LABELS[key];
+ return {upper:clean('upper'),middle:clean('middle'),lower:clean('lower')};
+}
+export function rateMatches(input:Match[],labels?:RatingLabels):Rating {
+ const names=normalizeRatingLabels(labels);
  const matches=[...new Map(input.map(x=>[x.id,x])).values()].sort((a,b)=>b.date-a.date).slice(0,5);
  const count=matches.length;
  const winRate=count?100*matches.filter(m=>m.win).length/count:null;
  const kda=count?matches.reduce((s,m)=>s+m.kills+m.assists,0)/Math.max(1,matches.reduce((s,m)=>s+m.deaths,0)):null;
  const score=count>=RATING_RULES.minimumGames?Math.round((winRate!/100)*70+Math.min(kda!/5,1)*30):null;
- return {count,winRate,kda,score,label:score===null?'样本不足':score>=70?'上等马':score<40?'下等马':'中等马',explanation:'仅代表近期状态。近五场胜率 × 70 + min(总击杀助攻 / max(1, 总死亡) / 5, 1) × 30；≥70 上等马，<40 下等马，其余中等马。少于三场不评级。'};
+ return {count,winRate,kda,score,label:score===null?'样本不足':score>=70?names.upper:score<40?names.lower:names.middle,explanation:'仅代表近期状态。近五场胜率 × 70 + min(总击杀助攻 / max(1, 总死亡) / 5, 1) × 30；≥70 上等马，<40 下等马，其余中等马。少于三场不评级。'};
 }
 
 export function recommend(role:Role,enemies:number[],opponentId:number|undefined,excluded:number[],stats:StatsSnapshot,champions:Champion[],allies:number[]=[],includeAlliedComposition=false):Recommendation[] {

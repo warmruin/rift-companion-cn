@@ -1,3 +1,4 @@
+import runeCatalog from '../assets/runes-zh-CN.json';
 import { mkdir, readFile, writeFile } from 'node:fs/promises';
 import path from 'node:path';
 import { load, type CheerioAPI } from 'cheerio';
@@ -293,18 +294,21 @@ export function getStats(role: Role, opponentId?: number, force = false): Promis
   return request;
 }
 
+const runeNames=new Map<number,string>(runeCatalog.flatMap(style=>[{id:style.id,name:style.name},...style.slots.flatMap(slot=>slot.runes)].map(rune=>[rune.id,rune.name] as [number,string])));
+const shardNames:Record<number,string>={5001:'成长生命值',5002:'护甲',5003:'魔法抗性',5005:'攻击速度',5007:'技能急速',5008:'自适应之力',5010:'移动速度',5011:'生命值',5013:'韧性和减速抵抗'};
+export function localizeRunePlan(plan:BuildPlan):BuildPlan{return {...plan,perkNames:plan.perkIds.map(id=>runeNames.get(id)??shardNames[id]??`符文 ${id}`)};}
 function buildCachePath(championId:number,role:Role):string{return path.join(configuredCacheDir,`opgg-build-${championId}-${role}.json`);}
 
 export function getBuildPlans(championId:number,role:Role,force=false):Promise<BuildPlan[]>{
  const key=`${championId}:${role}:${force}`;const active=buildRequests.get(key);if(active)return active;
  const request=(async()=>{
   const file=buildCachePath(championId,role);let cached:BuildPlan[]|undefined;
-  try{const value=JSON.parse(await readFile(file,'utf8')) as BuildPlan[];if(Array.isArray(value)&&value.length&&value.every(plan=>plan.championId===championId&&plan.role===role&&plan.perkIds.length===9))cached=value;}catch{/* no cache */}
+  try{const value=JSON.parse(await readFile(file,'utf8')) as BuildPlan[];if(Array.isArray(value)&&value.length&&value.every(plan=>plan.championId===championId&&plan.role===role&&plan.perkIds.length===9))cached=value.map(localizeRunePlan);}catch{/* no cache */}
   if(!force&&cached&&Date.now()-Date.parse(cached[0].fetchedAt)<CACHE_TTL_MS)return cached.map(plan=>({...plan,stale:false,error:undefined}));
   try{
    const champions=await getChampions();const champion=champions.find(item=>item.id===championId);if(!champion)throw new Error('Unknown champion');
    const slug=champion.key.toLowerCase().replace(/[^a-z0-9]/g,'');const source=`${OP_GG}/${slug}/build/${ROLE_PATH[role]}?region=global&tier=emerald_plus`;
-   const plans=parseBuildPage(await fetchText(source),championId,champion.name,role,source);
+   const plans=parseBuildPage(await fetchText(source),championId,champion.name,role,source).map(localizeRunePlan);
    await mkdir(configuredCacheDir,{recursive:true});await writeFile(file,JSON.stringify(plans),'utf8');return plans;
   }catch(error){if(cached)return cached.map(plan=>({...plan,stale:true,error:error instanceof Error?error.message:String(error)}));throw error;}
  })().finally(()=>buildRequests.delete(key));

@@ -174,5 +174,6 @@ describe('champion-select team rating message',()=>{
   const teammates=[{id:'a',name:'队友A',championId:1,role:'top',matches:[game(1).participants[1]&&{id:'1',championId:22,queueId:420,date:1,win:true,kills:8,deaths:2,assists:7,duration:1200},{id:'2',championId:22,queueId:420,date:2,win:false,kills:1,deaths:8,assists:2,duration:1200},{id:'3',championId:22,queueId:420,date:3,win:true,kills:8,deaths:2,assists:7,duration:1200}]}];
   const message=buildTeamRatingMessage(teammates);
   expect(message).toContain('队友A');expect(message).toContain('中等马');expect(message).toContain('67%');expect(message).toContain('近3局');
+  const custom=buildTeamRatingMessage([...teammates,{...teammates[0],id:'b',name:'队友B'}],{upper:'强势',middle:'稳健',lower:'待提升'});expect(custom.split('\n')).toHaveLength(4);expect(custom).toContain('稳健');expect(custom).not.toContain('中等马');
  });
 });

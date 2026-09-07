@@ -3,7 +3,7 @@ import { readFile } from 'node:fs/promises';
 import path from 'node:path';
 import { request } from 'node:https';
 import { promisify } from 'node:util';
-import type { ApplyResult, BuildPlan, ClientSnapshot, Match, Role, Teammate } from '../src/shared/types';
+import type { ApplyResult, BuildPlan, ClientSnapshot, Match, Role, RatingLabels, Teammate } from '../src/shared/types';
 import {rateMatches} from '../src/core/analysis';
 
 const execFileAsync = promisify(execFile);
@@ -427,8 +427,8 @@ export async function isLeagueGameRunning():Promise<boolean>{
  try{const {stdout}=await execFileAsync('powershell.exe',['-NoProfile','-NonInteractive','-Command',"[bool](Get-Process -Name 'League of Legends' -ErrorAction SilentlyContinue)"],{timeout:1500,windowsHide:true,maxBuffer:4096});return stdout.trim().toLowerCase()==='true';}catch{return false;}
 }
 
-export function buildTeamRatingMessage(teammates:Teammate[]):string{
- const rows=teammates.filter(player=>!player.anonymous&&player.matches.length>0).map(player=>{const rating=rateMatches(player.matches);const win=rating.winRate===null?'—':`${Math.round(rating.winRate)}%`;return `${player.name} ${rating.label}·近${rating.count}局${win}`;});
+export function buildTeamRatingMessage(teammates:Teammate[],labels?:RatingLabels):string{
+ const rows=teammates.filter(player=>!player.anonymous&&player.matches.length>0).map(player=>{const rating=rateMatches(player.matches,labels);const win=rating.winRate===null?'—':`${Math.round(rating.winRate)}%`;return `${player.name} ${rating.label}·近${rating.count}局${win}`;});
  if(!rows.length)throw new Error('当前没有可复制的队友战绩');
- return `队友近期状态：${rows.join(' | ')}`;
+ return `队友近期状态：\n${rows.join('\n')}\n`;
 }
