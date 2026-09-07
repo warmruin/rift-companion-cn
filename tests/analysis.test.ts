@@ -18,3 +18,12 @@ describe('推荐',()=>{
  it('未勾选时不加入自家阵容补位分',()=>{expect(recommend('top',[],undefined,[],stats,champions,[1],false).flatMap(x=>x.reasons).some(x=>x.includes('自家阵容'))).toBe(false);});
  it('已有坦克但缺战士时仍会给战士补位加分',()=>{const roster=[...champions,{id:30,key:'tank',name:'坦克',title:'',tags:['Tank'],image:''}];const result=recommend('top',[],undefined,[],stats,roster,[30],true);expect(result.find(x=>x.championId===1)?.reasons.join('')).toContain('战士');});
 });
+
+it('strong counter uses only raw matchup win rate, including candidates absent from tiers',()=>{
+ const s={...stats,counters:[...stats.counters,{championId:4,opponentId:9,role:'top' as const,winRate:99,games:1}]};
+ const result=recommend('top',[9],9,[],s,champions,[1],true,true);
+ expect(result.map(r=>r.championId)).toEqual([4,1,2]);
+ expect(result[0].score).toBe(99);
+ expect(recommend('top',[],undefined,[],s,champions,[],false,true)).toEqual([]);
+ expect(recommend('top',[9],9,[4],s,champions,[],false,true).map(r=>r.championId)).toEqual([1,2]);
+});

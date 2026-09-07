@@ -2,6 +2,12 @@ import {_electron as electron} from 'playwright';
 const app=await electron.launch({args:['.'],env:{...process.env,ELECTRON_RUN_AS_NODE:undefined}});
 try{
  const page=await app.firstWindow();
+ const counter=page.getByRole('button',{name:'强 counter',exact:true});
+ await counter.click();
+ if(await counter.getAttribute('aria-pressed')!=='true')throw Error('Counter mode not active');
+ await page.getByText('请先选择敌方英雄并设为主要对位。',{exact:true}).waitFor();
+ await counter.click();
+ if(await counter.getAttribute('aria-pressed')!=='false')throw Error('Counter mode not restored');
  await page.getByRole('button',{name:'选择敌方英雄 1',exact:true}).click();
  await page.locator('.pick-menu').waitFor();
  await page.getByRole('heading',{name:'让每一次选人，都有依据。'}).click();

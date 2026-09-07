@@ -18,8 +18,12 @@ export function rateMatches(input:Match[],labels?:RatingLabels):Rating {
  return {count,winRate,kda,score,label:score===null?'样本不足':score>=70?names.upper:score<40?names.lower:names.middle,explanation:'仅代表近期状态。近五场胜率 × 70 + min(总击杀助攻 / max(1, 总死亡) / 5, 1) × 30；≥70 上等马，<40 下等马，其余中等马。少于三场不评级。'};
 }
 
-export function recommend(role:Role,enemies:number[],opponentId:number|undefined,excluded:number[],stats:StatsSnapshot,champions:Champion[],allies:number[]=[],includeAlliedComposition=false):Recommendation[] {
+export function recommend(role:Role,enemies:number[],opponentId:number|undefined,excluded:number[],stats:StatsSnapshot,champions:Champion[],allies:number[]=[],includeAlliedComposition=false,strongCounter=false):Recommendation[] {
  const blocked=new Set([...enemies,...excluded]);
+ if(strongCounter){
+  if(!opponentId)return [];
+  return stats.counters.filter(row=>row.role===role&&row.opponentId===opponentId&&!blocked.has(row.championId)&&Number.isFinite(row.winRate)).map(row=>({championId:row.championId,score:row.winRate,matchupWinRate:row.winRate,games:row.games,tier:stats.rows.find(t=>t.role===role&&t.championId===row.championId)?.tier??null,reasons:[`仅按对位胜率排序：${row.winRate.toFixed(2)}%`,`统计样本 ${row.games.toLocaleString()} 场（不参与排序）`]})).sort((a,b)=>b.score-a.score);
+ }
  const byId=new Map(champions.map(c=>[c.id,c]));
  const enemyGroups=[...new Set(enemies)].map(id=>byId.get(id)?.tags??[]);
  const alliedTags=new Set(allies.flatMap(id=>byId.get(id)?.tags??[]));
