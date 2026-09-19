@@ -95,7 +95,12 @@ const tierColors = new Map<string, number>([
 
 export function parseTierPage(html: string, role: Role, champions: Champion[]): { rows: TierRow[]; patch: string } {
   const $ = load(html);
-  const table = $('table').filter((_, element) => $(element).find('caption').text().trim() === 'Ranking Table').first();
+  const table = $('table').filter((_, element) => {
+    const caption = $(element).find('caption').text().trim().toLowerCase();
+    const columns = $(element).find('thead th').map((_, node) => $(node).text().trim().toLowerCase()).get();
+    return ['ranking table', 'champion rankings'].includes(caption)
+      || ['champion', 'tier', 'win rate', 'pick rate'].every(column => columns.includes(column));
+  }).first();
   if (!table.length) throw new Error('OP.GG ranking table is absent');
   const headers = table.find('thead th').map((_, element) => $(element).text().trim().toLowerCase()).get();
   const championColumn = headers.indexOf('champion');

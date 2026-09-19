@@ -19,6 +19,9 @@ describe('OP.GG stats parser', () => {
       <tbody><tr><td>1</td><td><a href="/lol/champions/ahri/build/mid"><strong>Ahri</strong></a></td><td><svg><path fill="#0093FF" /></svg></td><td></td><td>51.25%</td><td>8.40%</td><td>3.1%</td></tr></tbody></table>
     </body></html>`;
     const result = parseTierPage(html, 'mid', champions);
+    const current = html.replace('Ranking Table', 'Champion rankings').replaceAll('16.17', '16.18');
+    expect(parseTierPage(current, 'mid', champions).patch).toBe('16.18');
+    expect(parseTierPage(current.replace('Champion rankings','Renamed rankings'), 'mid', champions).rows).toEqual(result.rows);
     expect(result.patch).toBe('16.17');
     expect(result.rows).toEqual([{ championId: 103, role: 'mid', tier: 1, winRate: 51.25, pickRate: 8.4, games: null }]);
   });
