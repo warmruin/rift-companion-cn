@@ -1,0 +1,92 @@
+/* League-inspired palette shared by every workspace page. */
+:root {
+  --rift-ink: #07141e;
+  --rift-sidebar: #0b1d29;
+  --rift-surface: #102532;
+  --rift-surface-raised: #142e3b;
+  --rift-line: #2a4654;
+  --rift-gold: #c89b3c;
+  --rift-gold-light: #e8c875;
+  --rift-cyan: #65b9c6;
+  --rift-muted: #91a9b7;
+  background: var(--rift-ink);
+  color: #e9edf0;
+}
+
+button:focus-visible,
+input:focus-visible { outline-color: var(--rift-gold-light); }
+button:hover { color: var(--rift-gold-light); }
+
+.sidebar { background: var(--rift-sidebar); border-right-color: var(--rift-line); }
+.brand-mark {
+  background: linear-gradient(155deg, #f0d58c 0%, var(--rift-gold) 55%, #8e6428 100%);
+  color: #091a26;
+  filter: drop-shadow(0 0 11px #c89b3c22);
+}
+.brand span, .workspace-label, .sidebar-bottom p, .version { color: var(--rift-muted); }
+.version, .topbar, .filterbar, footer { border-color: var(--rift-line); }
+nav button { color: #9cb1be; }
+nav button:hover { background: #163240; }
+nav button.active { background: #1b3540; color: var(--rift-gold-light); }
+nav button i { background: var(--rift-gold); }
+.eyebrow { color: var(--rift-gold); }
+.topbar { color: #a8bac4; }
+.connection i.online { background: var(--rift-cyan); }
+.divider { background: var(--rift-line); }
+
+.outline, .primary, .minimize-button { border-color: #42606c; }
+.outline:hover, .minimize-button:hover { background: #1a3947; color: var(--rift-gold-light); }
+.primary, .panel-foot .chat-send {
+  background: linear-gradient(135deg, #e0ba67, var(--rift-gold));
+  border-color: var(--rift-gold);
+  color: #11202a;
+}
+.primary:hover, .panel-foot .chat-send:hover {
+  background: linear-gradient(135deg, #f2d990, #d7ae55);
+  border-color: var(--rift-gold-light);
+  color: #11202a;
+}
+.role-tabs .active { color: var(--rift-gold-light); }
+.role-tabs .active:after { background: var(--rift-gold); }
+.panel, .summary-box { background: var(--rift-surface); border-color: var(--rift-line); }
+.count { background: #203847; color: #a9bdc8; }
+.toggle input:checked+span { background: #805f2e; }
+.toggle input:checked+span:after { background: var(--rift-gold-light); }
+.toggle input:focus-visible+span { outline-color: var(--rift-gold-light); }
+
+.enemy-slot, .flash-enemy { background: #0d202c; border-color: var(--rift-line); }
+.enemy-slot.target {
+  background: linear-gradient(155deg, #243746, #0d202c 80%);
+  border-color: #9d7836;
+}
+.slot-label .target-badge { color: var(--rift-gold-light); background: #493a23; }
+.portrait { background: linear-gradient(145deg, #2d4b58, #172a36); border-color: #4a6470; }
+.pick-menu { background: var(--rift-surface-raised); border-color: #54717c; }
+.pick-menu input, .search, .hotkey-setting input, .rating-custom input {
+  background: #0c202c;
+  border-color: #3a5967;
+}
+.pick-menu>button, .text-button, .source-line button, .panel-foot button { color: var(--rift-cyan); }
+.pick-results button:hover { background: #284657; }
+.pill { background: #243746; border-color: #3d5965; color: #b5cad2; }
+.recommend-card { background: #102634; border-color: var(--rift-line); }
+.recommend-card.best {
+  background: linear-gradient(140deg, #263749, #112735 75%);
+  border-color: #a7803d;
+}
+.best .card-top .eyebrow, .mint, .reasons p>span, .plan-meta { color: var(--rift-gold-light) !important; }
+.tier { background: #1d3e4c; color: #8acdda; }
+.spinner { border-color: #456675; border-top-color: var(--rift-gold-light); }
+.empty-icon { color: var(--rift-gold); }
+.notice { background: #17313e; border-color: #345664; }
+.notice.warning { background: #2a271e; border-color: #6b5631; }
+
+.summary-box .status-text { color: var(--rift-cyan); }
+.rating { background: #303647; color: #bdcad4; }
+.rating.good { background: #453824; color: var(--rift-gold-light); }
+.rating.bad { background: #432e38; color: #e4a5ae; }
+.match { background: #17303d; border-top-color: #55a9bb; }
+.match-result { color: #91d4df; }
+.match.loss { background: #302832; border-top-color: #a46677; }
+.loss .match-result { color: #e4aab4; }
+::-webkit-scrollbar-thumb { background: #3e5d69; }

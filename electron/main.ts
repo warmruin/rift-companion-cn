@@ -35,7 +35,7 @@ function recoverRenderer(kind:string,details:Record<string,unknown>={}){
  log(kind,details);if(recovering||!win||win.isDestroyed())return;recovering=true;const now=Date.now();
  if(now-recoveryAt>=60_000)recoveryFailures=0;
  if(now-recoveryAt<60_000&&!safeMode){log('relaunch-safe-mode');app.relaunch({args:[...process.argv.slice(1).filter(arg=>arg!=='--safe-renderer'),'--safe-renderer']});app.exit(0);return;}
- if(safeMode&&recoveryFailures>=1){log('renderer-recovery-stopped');const html='<!doctype html><meta charset="utf-8"><style>body{margin:0;background:#0b1015;color:#dbe8e6;font:16px Segoe UI;padding:48px}p{color:#93a8ad}</style><h2>助手页面恢复失败</h2><p>请关闭并重新打开程序。诊断日志位于应用数据目录的 logs 文件夹。</p>';void win.loadURL(`data:text/html;charset=UTF-8,${encodeURIComponent(html)}`);return;}
+ if(safeMode&&recoveryFailures>=1){log('renderer-recovery-stopped');const html='<!doctype html><meta charset="utf-8"><style>body{margin:0;background:#07141e;color:#e9edf0;font:16px Segoe UI;padding:48px}p{color:#91a9b7}</style><h2>助手页面恢复失败</h2><p>请关闭并重新打开程序。诊断日志位于应用数据目录的 logs 文件夹。</p>';void win.loadURL(`data:text/html;charset=UTF-8,${encodeURIComponent(html)}`);return;}
  recoveryAt=now;recoveryFailures+=1;setTimeout(()=>{loadHome();recovering=false;},250);
 }
 async function watchGameflow(){
@@ -65,7 +65,7 @@ app.whenReady().then(()=>{
  ipcMain.handle('choose-lockfile',async()=>{const result=await dialog.showOpenDialog({title:'选择 LOL 安装目录下的 lockfile',properties:['openFile']});if(result.canceled)return null;const file=result.filePaths[0];setLockfile(file);return file;});
  ipcMain.handle('restart-elevated',async()=>{const target=process.env.PORTABLE_EXECUTABLE_FILE||process.execPath;const spec=elevationRelaunchSpec(target);await execFileAsync(spec.file,spec.args,{env:{...process.env,...spec.environment},windowsHide:true,timeout:30_000});setTimeout(()=>app.quit(),300);});
  ipcMain.handle('open-source',async(_event,url)=>{if(typeof url!=='string'||!allowedSource(url))throw new Error('不允许打开此链接');await shell.openExternal(url);});
- win=new BrowserWindow({width:1400,height:940,minWidth:1080,minHeight:760,backgroundColor:'#0b1015',icon:path.join(app.getAppPath(),'assets','app.ico'),title:'Rift Companion · LOL 国服助手',autoHideMenuBar:true,show:false,webPreferences:{preload:path.join(__dirname,'preload.cjs'),contextIsolation:true,nodeIntegration:false,sandbox:true,backgroundThrottling:false}});
+ win=new BrowserWindow({width:1400,height:940,minWidth:1080,minHeight:760,backgroundColor:'#07141e',icon:path.join(app.getAppPath(),'assets','app.ico'),title:'Rift Companion · LOL 国服助手',autoHideMenuBar:true,show:false,webPreferences:{preload:path.join(__dirname,'preload.cjs'),contextIsolation:true,nodeIntegration:false,sandbox:true,backgroundThrottling:false}});
  win.webContents.setWindowOpenHandler(()=>({action:'deny'}));win.webContents.on('will-navigate',(e)=>e.preventDefault());
  win.webContents.on('render-process-gone',(_event,details)=>recoverRenderer('render-process-gone',{reason:details.reason,exitCode:details.exitCode}));
   win.webContents.on('did-fail-load',(_event,code,description,url,isMainFrame)=>{if(isMainFrame&&code!==-3)recoverRenderer('did-fail-load',{code,description,url:path.basename(url)});});

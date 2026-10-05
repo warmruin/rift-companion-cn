@@ -1,0 +1,17 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 256 256" aria-label="Rift Companion">
+  <defs>
+    <linearGradient id="gold" x1="0" y1="0" x2="1" y2="1">
+      <stop stop-color="#f0d58c"/>
+      <stop offset="0.55" stop-color="#c89b3c"/>
+      <stop offset="1" stop-color="#8e6428"/>
+    </linearGradient>
+    <linearGradient id="teal" x1="0" y1="0" x2="1" y2="1">
+      <stop stop-color="#143c4c"/>
+      <stop offset="1" stop-color="#081923"/>
+    </linearGradient>
+  </defs>
+  <rect x="19" y="19" width="218" height="218" rx="54" fill="#07141e" stroke="url(#gold)" stroke-width="9"/>
+  <path d="M60 197 79 58h121l-18 139z" fill="url(#gold)"/>
+  <path d="M181 64h13l-17 127h-13z" fill="url(#teal)" opacity=".65"/>
+  <path d="M93 176V79h47c30 0 46 13 46 36 0 16-9 27-24 32l27 29h-29l-25-27h-17v27zm25-47h20c14 0 22-5 22-15 0-9-7-14-21-14h-21z" fill="#081923"/>
+</svg>
