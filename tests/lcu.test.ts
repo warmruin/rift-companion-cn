@@ -4,6 +4,8 @@ import {
   selectRecentMatches,
   visibleTeammatesFromChampSelect,
   visibleTeammatesFromGameflow,
+  visibleOpponentsFromGameflow,
+  visibleOpponentsFromLive,
   historyRoute,
   enemyChampionSlots,
   credentialsFromProcesses,
@@ -158,6 +160,35 @@ describe('visibleTeammatesFromGameflow', () => {
       expect.objectContaining({ id: 'ally', name: 'Ally', championId: 2 }),
     ]);
   });
+});
+
+describe('visibleOpponentsFromGameflow',()=>{
+ it('selects the opposing team by the local player identity',()=>{
+  const gameflow={gameData:{teamOne:[{puuid:'self',summonerName:'自己'}],teamTwo:[{puuid:'foe',summonerName:'敌人',championId:54,assignedPosition:'TOP'}]}};
+  expect(visibleOpponentsFromGameflow(gameflow,{puuid:'self'})).toEqual([
+   expect.objectContaining({id:'foe',name:'敌人',championId:54,role:'TOP',puuid:'foe',matches:[]}),
+  ]);
+ });
+ it('does not expose opponents before the game is in progress',()=>{
+  const gameflow={gameData:{teamOne:[{puuid:'self'}],teamTwo:[{puuid:'foe',summonerName:'敌人'}]}};
+  expect(visibleOpponentsFromGameflow(gameflow,{puuid:'self'},'ChampSelect')).toEqual([]);
+ });
+ it('keeps a visible opponent without history identity with an explanation',()=>{
+  const gameflow={gameData:{teamOne:[{puuid:'self'}],teamTwo:[{summonerName:'敌人',championId:54}]}};
+  expect(visibleOpponentsFromGameflow(gameflow,{puuid:'self'})).toEqual([
+   expect.objectContaining({name:'敌人',anonymous:true,error:'当前接口未提供可查询战绩的玩家标识'}),
+  ]);
+ });
+ it('does not display a name marked hidden by the client',()=>{
+  const gameflow={gameData:{teamOne:[{puuid:'self'}],teamTwo:[{puuid:'hidden',summonerName:'真实名字',isNameObfuscated:true}]}};
+  expect(visibleOpponentsFromGameflow(gameflow,{puuid:'self'})).toEqual([expect.objectContaining({name:'匿名敌方玩家',anonymous:true,error:'当前接口未提供可查询战绩的玩家标识'})]);
+ });
+});
+
+it('shows live opponents even when gameflow has no history identity',()=>{
+ expect(visibleOpponentsFromLive([{slot:1,championName:'熔岩巨兽',summonerName:'敌方玩家#CN1'}])).toEqual([
+  expect.objectContaining({id:'live-opponent:1',name:'敌方玩家#CN1',championName:'熔岩巨兽',matches:[],anonymous:true,error:'当前接口未提供可查询战绩的玩家标识'}),
+ ]);
 });
 
 describe('ranked draft state',()=>{

@@ -3,8 +3,9 @@ import { readFile } from 'node:fs/promises';
 import path from 'node:path';
 import { request } from 'node:https';
 import { promisify } from 'node:util';
-import type { ApplyResult, BuildPlan, ClientSnapshot, Match, Role, RatingLabels, Teammate } from '../src/shared/types';
+import type { ApplyResult, BuildPlan, ClientSnapshot, LiveEnemy, Match, Role, RatingLabels, Teammate } from '../src/shared/types';
 import {rateMatches} from '../src/core/analysis';
+import {getLiveEnemies} from './live-client';
 
 const execFileAsync = promisify(execFile);
 const REQUEST_TIMEOUT_MS = 2_500;
@@ -269,6 +270,26 @@ export function visibleTeammatesFromGameflow(gameflow: Json, self: Json): Teamma
     }));
 }
 
+export function visibleOpponentsFromGameflow(gameflow:Json,self:Json,phase='InProgress'):Teammate[]{
+ if(phase!=='InProgress'&&phase!=='Reconnect')return [];
+ const selfId=String(self.puuid??self.summonerId??'');
+ const data=gameflow.gameData??{};
+ const teams:Json[][]=[data.teamOne,data.teamTwo].filter(Array.isArray);
+ const ownTeam=teams.find(team=>team.some(member=>String(member.puuid??member.summonerId??'')===selfId));
+ if(!ownTeam||!selfId)return [];
+ const opposingTeam=teams.find(team=>team!==ownTeam)??[];
+ return opposingTeam.slice(0,5).map((member,index)=>{
+  const puuid=String(member.puuid??'').trim();
+  const summonerId=member.summonerId!=null&&Number(member.summonerId)>0?member.summonerId:undefined;
+  const anonymous=isAnonymous(member)||(!puuid&&summonerId==null);
+  return {id:anonymous?`anonymous-opponent:${index}`:puuid||String(summonerId),name:isAnonymous(member)?'匿名敌方玩家':String(member.riotId??member.summonerName??member.gameName??member.displayName??'敌方玩家').trim()||'敌方玩家',championId:Number(member.championId??0),role:String(member.assignedPosition??''),matches:[],anonymous,...(!anonymous&&puuid?{puuid}:{}),...(!anonymous&&summonerId!=null?{summonerId}:{}),...(anonymous?{error:'当前接口未提供可查询战绩的玩家标识'}:{})};
+ });
+}
+
+export function visibleOpponentsFromLive(enemies:LiveEnemy[]):Teammate[]{
+ return enemies.slice(0,5).map(enemy=>({id:`live-opponent:${enemy.slot}`,name:enemy.summonerName||`敌方玩家 ${enemy.slot}`,championId:0,championName:enemy.championName,role:'',matches:[],anonymous:true,error:'当前接口未提供可查询战绩的玩家标识'}));
+}
+
 function roleOf(value: unknown): Role | undefined {
   const normalized = String(value ?? '').toLowerCase();
   const map: Record<string, Role> = { top: 'top', jungle: 'jungle', middle: 'mid', mid: 'mid', bottom: 'adc', adc: 'adc', utility: 'support', support: 'support' };
@@ -329,6 +350,10 @@ async function fetchClientSnapshot(): Promise<ClientSnapshot> {
       ? visibleTeammatesFromChampSelect(champSelect)
       : gameflowTeammates.length ? gameflowTeammates : lobby ? visibleLobbyMembers(lobby, self) : [];
     const known = teammates.filter((player) => !player.anonymous).slice(0, 4);
+    let opponents=gameflow?visibleOpponentsFromGameflow(gameflow,self,String(phase)):[];
+    if(!opponents.length&&String(phase)==='InProgress'){
+      try{opponents=visibleOpponentsFromLive(await getLiveEnemies());}catch{/* 局内接口暂不可用 */}
+    }
     await Promise.all(known.map(player=>resolveTeammate(credentials,player)));
     await Promise.all(known.map(async (player) => {
       try {
@@ -336,6 +361,10 @@ async function fetchClientSnapshot(): Promise<ClientSnapshot> {
         if (!player.matches.length) player.error = '接口未返回符合当前模式的有效对局';
       }
       catch (error) { player.error = error instanceof Error ? error.message : '战绩不可用'; }
+    }));
+    await Promise.all(opponents.filter(player=>!player.anonymous).map(async player=>{
+      try{player.matches=await loadHistory(credentials,player,queueId);if(!player.matches.length)player.error='接口未返回符合当前模式的有效对局';}
+      catch(error){player.error=error instanceof Error?error.message:'战绩不可用';}
     }));
     const actions: Json[] = champSelect?.actions?.flat?.() ?? [];
     const completed = actions.filter((action) => action.completed && Number(action.championId) > 0);
@@ -355,11 +384,11 @@ async function fetchClientSnapshot(): Promise<ClientSnapshot> {
       queueId,
       enemies: enemyChampionSlots(champSelect ?? {}),
       allies: allyChampionSlots(champSelect??{}),
-      banned: [...new Set(banned)], picked: [...new Set(picked)], teammates, updatedAt,
+      banned: [...new Set(banned)], picked: [...new Set(picked)], teammates, opponents, updatedAt,
     };
     return snapshot;
   } catch (error) {
-    return { connected: false, phase: 'Unavailable', message: error instanceof Error ? error.message : 'League 客户端不可用', enemies: [], allies:[], banned: [], picked: [], teammates: [], updatedAt };
+    return { connected: false, phase: 'Unavailable', message: error instanceof Error ? error.message : 'League 客户端不可用', enemies: [], allies:[], banned: [], picked: [], teammates: [], opponents:[], updatedAt };
   }
 }
 

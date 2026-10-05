@@ -21,3 +21,8 @@ it('maps the opposing Live Client Data team to stable one-based slots',()=>{
  const enemies=parseLiveEnemies('自己',[{summonerName:'自己',team:'ORDER',championName:'Ahri'},{riotIdGameName:'对手',team:'CHAOS',championName:'Malphite'}]);
  expect(enemies).toEqual([{slot:1,championName:'Malphite',summonerName:'对手'}]);
 });
+
+it('keeps the full Riot ID when Live Client Data provides a tag line',()=>{
+ const [enemy]=parseLiveEnemies('自己',[{summonerName:'自己',team:'ORDER'},{team:'CHAOS',riotIdGameName:'敌方玩家',riotIdTagLine:'CN1',championName:'Malphite'}]);
+ expect(enemy.summonerName).toBe('敌方玩家#CN1');
+});
